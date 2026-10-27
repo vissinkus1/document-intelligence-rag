@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+psycopg[binary]
+pgvector
+pydantic-settings
+python-jose[cryptography]
+bcrypt
+python-multipart
+email-validator
+pypdf
+langchain
+langchain-text-splitters
+langchain-google-genai
+google-genai
+httpx
