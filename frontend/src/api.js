@@ -3,7 +3,7 @@
  * All requests go through this module for consistent auth header handling.
  */
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL ?? "/api";
 
 /** Get the stored JWT token */
 function getToken() {

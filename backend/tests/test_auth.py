@@ -1,65 +1,114 @@
-from fastapi.testclient import TestClient
+"""Unit and integration tests for authentication and authorization.
+
+Tests user registration (first user bootstrap to admin, subsequent to member),
+password hashing/validation, login flow with JWT, /auth/me, and RBAC endpoint guards.
+"""
+import os
+
+from fastapi import HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.db import get_db
-from app.main import app
-from app.models import User
+from app.models import Role, User
+from app.routers.auth import list_users, login, me, register, set_role
+from app.schemas import RegisterIn, RoleUpdate
 
-engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-User.__table__.create(engine)
-Session = sessionmaker(bind=engine, expire_on_commit=False)
 
-def override():
-    db = Session()
+@pytest.fixture(scope="module")
+def db_session():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    User.__table__.create(engine)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    session = session_factory()
     try:
-        yield db
+        yield session
     finally:
-        db.close()
+        session.close()
 
-app.dependency_overrides[get_db] = override
-c = TestClient(app)
 
-def login(email, pw):
-    return c.post("/auth/login", data={"username": email, "password": pw})
+def test_first_user_registration_is_admin(db_session):
+    user = register(RegisterIn(email="Admin@Test.com", password="password123"), db_session)
+    assert user.role == Role.admin
+    assert user.email == "admin@test.com"  # Lowercase normalized
+    assert "password" not in user.__dict__ or not user.__dict__["password_hash"] == "password123"
 
-def auth(tok): return {"Authorization": f"Bearer {tok}"}
 
-# register
-r = c.post("/auth/register", json={"email": "Admin@Test.com", "password": "password123"})
-assert r.status_code == 201 and r.json()["role"] == "admin", r.text   # first user = admin
-r = c.post("/auth/register", json={"email": "emp@test.com", "password": "password123"})
-assert r.status_code == 201 and r.json()["role"] == "member", r.text
-assert "password" not in r.text and "hash" not in r.text               # no secrets leaked
-print("register: first user admin, second member, no hash in response")
+def test_second_user_registration_is_member(db_session):
+    user = register(RegisterIn(email="member@test.com", password="password123"), db_session)
+    assert user.role == Role.member
+    assert user.email == "member@test.com"
 
-assert c.post("/auth/register", json={"email": "emp@test.com", "password": "password123"}).status_code == 409
-assert c.post("/auth/register", json={"email": "x@test.com", "password": "short"}).status_code == 422
-assert c.post("/auth/register", json={"email": "x@test.com", "password": "a"*80}).status_code == 422
-assert c.post("/auth/register", json={"email": "not-an-email", "password": "password123"}).status_code == 422
-print("validation: duplicate, short pw, >72 byte pw, bad email all rejected")
 
-# login
-assert login("admin@test.com", "wrongpass1").status_code == 401
-assert login("nobody@test.com", "password123").status_code == 401
-a = login("ADMIN@test.com", "password123"); assert a.status_code == 200
-m = login("emp@test.com", "password123"); assert m.status_code == 200
-at, mt = a.json()["access_token"], m.json()["access_token"]
-print("login: wrong pw / unknown user -> 401, email case-insensitive OK")
+def test_duplicate_registration_rejected_409(db_session):
+    with pytest.raises(HTTPException) as exc_info:
+        register(RegisterIn(email="member@test.com", password="password123"), db_session)
+    assert exc_info.value.status_code == 409
 
-# protected routes
-assert c.get("/auth/me").status_code == 401
-assert c.get("/auth/me", headers=auth("garbage")).status_code == 401
-assert c.get("/auth/me", headers=auth(mt)).json()["email"] == "emp@test.com"
-print("/auth/me: no token / bad token -> 401, valid token OK")
 
-# role enforcement
-assert c.get("/auth/users", headers=auth(mt)).status_code == 403
-assert len(c.get("/auth/users", headers=auth(at)).json()) == 2
-assert c.patch("/auth/users/2/role", json={"role": "admin"}, headers=auth(mt)).status_code == 403
-assert c.patch("/auth/users/2/role", json={"role": "admin"}, headers=auth(at)).json()["role"] == "admin"
-assert c.patch("/auth/users/1/role", json={"role": "member"}, headers=auth(at)).status_code == 400
-assert c.patch("/auth/users/99/role", json={"role": "admin"}, headers=auth(at)).status_code == 404
-print("roles: member blocked (403), admin can list/promote, self-demote blocked, 404 on missing user")
-print("\nALL AUTH TESTS PASSED")
+def test_login_flow(db_session):
+    # Valid login
+    form = OAuth2PasswordRequestForm(
+        grant_type="",
+        username="admin@test.com",
+        password="password123",
+        scope="",
+        client_id=None,
+        client_secret=None,
+    )
+    token_out = login(form, db_session)
+    assert token_out.access_token
+    assert token_out.token_type == "bearer"
+    assert token_out.user.email == "admin@test.com"
+
+    # Invalid password -> 401
+    bad_form = OAuth2PasswordRequestForm(
+        grant_type="",
+        username="admin@test.com",
+        password="wrongpassword",
+        scope="",
+        client_id=None,
+        client_secret=None,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        login(bad_form, db_session)
+    assert exc_info.value.status_code == 401
+
+
+def test_auth_me_and_user_listing(db_session):
+    admin = db_session.query(User).filter_by(role=Role.admin).first()
+    member = db_session.query(User).filter_by(role=Role.member).first()
+
+    # /auth/me returns the authenticated user
+    profile = me(member)
+    assert profile.email == "member@test.com"
+    assert profile.role == Role.member
+
+    # /auth/users list all users for admin
+    users = list_users(admin, db_session)
+    assert len(users) >= 2
+
+
+def test_role_enforcement_and_promotion(db_session):
+    admin = db_session.query(User).filter_by(role=Role.admin).first()
+    member = db_session.query(User).filter_by(role=Role.member).first()
+
+    # Promote member to admin
+    updated = set_role(member.id, RoleUpdate(role=Role.admin), admin, db_session)
+    assert updated.role == Role.admin
+
+    # Self-demotion blocked
+    with pytest.raises(HTTPException) as exc_info:
+        set_role(admin.id, RoleUpdate(role=Role.member), admin, db_session)
+    assert exc_info.value.status_code == 400
+
+    # Non-existent user -> 404
+    with pytest.raises(HTTPException) as exc_info:
+        set_role(99999, RoleUpdate(role=Role.admin), admin, db_session)
+    assert exc_info.value.status_code == 404

@@ -30,10 +30,10 @@ export default function DocumentsPage() {
     loadDocuments();
   }, [loadDocuments]);
 
-  // Auto-refresh when any document is in PROCESSING or PENDING status
+  // Auto-refresh when any document is in uploaded or processing status
   useEffect(() => {
     const hasPending = documents.some(
-      (d) => d.status === "processing" || d.status === "pending"
+      (d) => d.status === "uploaded" || d.status === "processing"
     );
     if (!hasPending) return;
 
@@ -146,7 +146,7 @@ export default function DocumentsPage() {
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf,.txt,.md,.docx"
+          accept=".pdf,application/pdf"
           onChange={(e) => handleFileUpload(e.target.files)}
           style={{ display: "none" }}
         />
@@ -155,7 +155,7 @@ export default function DocumentsPage() {
           {uploading ? uploadProgress : "Drop files here or click to browse"}
         </h3>
         <p className="dropzone-text">
-          Supports institutional PDF documents, text guidelines, and policy briefs.
+          Supports institutional PDF documents, handbooks, guidelines, and manuals.
         </p>
         <span className="dropzone-badge">Automatic Chunking & Vector Indexing</span>
       </div>

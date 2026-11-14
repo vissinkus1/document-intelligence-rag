@@ -53,7 +53,13 @@ def generate(
 
     # Build deduplicated model list to try
     models_to_try = [settings.generation_model]
-    for fallback in ("gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"):
+    for fallback in (
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3.1-flash-lite",
+    ):
         if fallback not in models_to_try:
             models_to_try.append(fallback)
 

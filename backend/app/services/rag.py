@@ -41,21 +41,20 @@ Explain that you are their Institutional DocQA Assistant, ready to answer questi
 Do not fabricate institutional policies or facts."""
 
 _GREETING_REGEX = re.compile(
-    r"^(hi|hii+|hello|hey|greetings|good\s+(morning|afternoon|evening|day)|"
+    r"^(?:"
+    r"hi+|hello+|hey+(?:\s+there)?|greetings|good\s+(?:morning|afternoon|evening|day)|"
     r"who\s+are\s+you|what\s+can\s+you\s+do|how\s+are\s+you|what\s+is\s+your\s+name|"
-    r"i\s+am\s+|my\s+name\s+is\s+|"
-    r"thank\s+you|thanks|bye|goodbye)"
-    r"(\b|[!.?\s])",
+    r"thank\s+you(?:\s+so\s+much)?|thanks(?:\s+a\s+lot)?|bye|goodbye|"
+    r"(?:i\s+am|my\s+name\s+is)\s+[a-zA-Z\s]+"
+    r")[!.?\s]*$",
     re.IGNORECASE,
 )
 
 
 def _is_conversational(text: str) -> bool:
-    """Check if query is a simple greeting, introduction, or pleasantry."""
-    t = text.strip().lower()
-    if len(t) <= 60 and _GREETING_REGEX.search(t):
-        return True
-    return False
+    """Check if query is ENTIRELY a simple greeting, introduction, or pleasantry."""
+    t = text.strip()
+    return bool(_GREETING_REGEX.match(t))
 
 @dataclass
 class Citation:
@@ -119,8 +118,11 @@ def _build_history_block(history: list[dict]) -> str:
     lines = ["Previous conversation:"]
     for msg in history:
         role = "User" if msg["role"] == "user" else "Assistant"
-        # Truncate long previous messages to save context budget
         content = msg["content"]
+        if msg.get("role") == "assistant":
+            # Strip old citation markers like [1] or [1, 2] so they do not clash with new passage numbering
+            content = re.sub(r"\s*\[\s*\d+(?:[\s,;\-–]\s*\d+)*\s*\]", "", content).strip()
+        # Truncate long previous messages to save context budget
         if len(content) > 500:
             content = content[:500] + "…"
         lines.append(f"{role}: {content}")
@@ -128,9 +130,29 @@ def _build_history_block(history: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _clean_dangling_citations(answer: str, max_valid: int) -> str:
+    """Remove [n] markers that do not correspond to any retrieved passage."""
+    def _repl_bracket(match):
+        content = match.group(1)
+        nums = re.findall(r"\b\d+\b", content)
+        if not nums:
+            return match.group(0)
+        valid_nums = [n for n in nums if 1 <= int(n) <= max_valid]
+        if not valid_nums:
+            return ""
+        return f" [{', '.join(valid_nums)}]"
+
+    cleaned = re.sub(r"\s*\[(\s*\d+(?:[\s,;\-–]\s*\d+)*\s*)\]", _repl_bracket, answer)
+    return re.sub(r" +", " ", cleaned).strip()
+
+
 def _extract_citation_refs(answer: str) -> set[int]:
-    """Extract ``[N]`` style citation references from the answer text."""
-    return {int(m) for m in re.findall(r"\[(\d+)\]", answer)}
+    """Extract citation numbers from bracketed references like [1], [1, 2], [1-3]."""
+    refs = set()
+    for bracket_content in re.findall(r"\[([^\]]+)\]", answer):
+        for num in re.findall(r"\b\d+\b", bracket_content):
+            refs.add(int(num))
+    return refs
 
 
 def _validate_citations(
@@ -233,8 +255,11 @@ def ask(
     # 4. Generate grounded answer
     raw_answer = generate_fn(SYSTEM_PROMPT, user_prompt)
 
+    # Clean dangling citations not in retrieved passages
+    answer = _clean_dangling_citations(raw_answer, len(used_chunks))
+
     # 5. Validate citations
-    refs = _extract_citation_refs(raw_answer)
+    refs = _extract_citation_refs(answer)
     citations = _validate_citations(refs, used_chunks)
 
     log.info(
@@ -247,7 +272,7 @@ def ask(
     )
 
     return RAGResponse(
-        answer=raw_answer,
+        answer=answer,
         citations=citations,
         chunks_retrieved=len(chunks),
     )
