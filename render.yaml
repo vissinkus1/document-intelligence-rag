@@ -1,0 +1,51 @@
+# Render Blueprint Specification
+# Deploys the full Institutional Document QA RAG Platform for 100% Free on Render.
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. FastAPI Backend (Free Web Service via Docker)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: docqa-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false # Enter your Supabase / Neon / Render Postgres connection URI
+      - key: GEMINI_API_KEY
+        sync: false # Enter your Google Gemini API Key
+      - key: JWT_SECRET
+        generateValue: true # Render automatically generates a secure 32+ character secret
+      - key: CORS_ORIGINS
+        fromService:
+          type: web
+          name: docqa-frontend
+          property: url
+
+  # ---------------------------------------------------------------------------
+  # 2. React 19 Frontend (Free Static Site - 0s cold start, fast global CDN)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: docqa-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    plan: free
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: docqa-backend
+          property: url
