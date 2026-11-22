@@ -49,3 +49,4 @@ services:
           type: web
           name: docqa-backend
           property: url
+
