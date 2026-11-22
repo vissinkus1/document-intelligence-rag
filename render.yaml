@@ -1,10 +1,20 @@
 # Render Blueprint Specification
-# Deploys the full Institutional Document QA RAG Platform for 100% Free on Render.
+# Deploys Database, Backend, and Frontend all on Render for 100% Free.
 # Docs: https://render.com/docs/blueprint-spec
+
+databases:
+  # ---------------------------------------------------------------------------
+  # 1. PostgreSQL Database with pgvector (Free Tier on Render)
+  # ---------------------------------------------------------------------------
+  - name: docqa-db
+    databaseName: ragdb
+    user: raguser
+    plan: free
+    region: oregon
 
 services:
   # ---------------------------------------------------------------------------
-  # 1. FastAPI Backend (Free Web Service via Docker)
+  # 2. FastAPI Backend (Free Web Service via Docker)
   # ---------------------------------------------------------------------------
   - type: web
     name: docqa-backend
@@ -18,9 +28,11 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: DATABASE_URL
-        sync: false # Enter your Supabase / Neon / Render Postgres connection URI
+        fromDatabase:
+          name: docqa-db
+          property: connectionString
       - key: GEMINI_API_KEY
-        sync: false # Enter your Google Gemini API Key
+        sync: false # Enter your Google Gemini API Key in the Render UI
       - key: JWT_SECRET
         generateValue: true # Render automatically generates a secure 32+ character secret
       - key: CORS_ORIGINS
@@ -30,7 +42,7 @@ services:
           property: url
 
   # ---------------------------------------------------------------------------
-  # 2. React 19 Frontend (Free Static Site - 0s cold start, fast global CDN)
+  # 3. React 19 Frontend (Free Static Site - 0s cold start, fast global CDN)
   # ---------------------------------------------------------------------------
   - type: web
     name: docqa-frontend
@@ -49,4 +61,3 @@ services:
           type: web
           name: docqa-backend
           property: url
-
