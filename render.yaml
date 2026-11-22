@@ -54,4 +54,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        value: "https://docqa-backend.onrender.com"
+        value: "https://docqa-backend-sc5f.onrender.com"
