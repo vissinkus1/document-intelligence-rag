@@ -36,10 +36,7 @@ services:
       - key: JWT_SECRET
         generateValue: true # Render automatically generates a secure 32+ character secret
       - key: CORS_ORIGINS
-        fromService:
-          type: web
-          name: docqa-frontend
-          property: url
+        value: "https://*.onrender.com,http://localhost:3000"
 
   # ---------------------------------------------------------------------------
   # 3. React 19 Frontend (Free Static Site - 0s cold start, fast global CDN)
@@ -57,7 +54,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: docqa-backend
-          property: url
+        value: "https://docqa-backend.onrender.com"
