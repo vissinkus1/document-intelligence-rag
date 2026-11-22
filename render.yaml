@@ -41,13 +41,11 @@ services:
   # ---------------------------------------------------------------------------
   # 3. React 19 Frontend (Free Static Site - 0s cold start, fast global CDN)
   # ---------------------------------------------------------------------------
-  - type: web
+  - type: static
     name: docqa-frontend
-    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
-    plan: free
     routes:
       - type: rewrite
         source: /*
