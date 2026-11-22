@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
 # Render Blueprint Specification
 # Deploys Database, Backend, and Frontend all on Render for 100% Free.
 # Docs: https://render.com/docs/blueprint-spec
@@ -41,11 +42,12 @@ services:
   # ---------------------------------------------------------------------------
   # 3. React 19 Frontend (Free Static Site - 0s cold start, fast global CDN)
   # ---------------------------------------------------------------------------
-  - type: static
+  - type: web
     name: docqa-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    staticPublishPath: dist
     routes:
       - type: rewrite
         source: /*
